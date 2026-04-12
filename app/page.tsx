@@ -73,7 +73,7 @@ export default function ChatPage() {
   // Load sidebar chats
   const loadSidebar = async () => {
     try {
-      const chats = await getAllChats() as ChatRecord[];
+      const chats = (await getAllChats()) as unknown as ChatRecord[];
       const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
       const expireBefore = Date.now() - tenDaysMs;
 
