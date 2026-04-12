@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { saveChat, getChat, getAllChats } from '@/lib/db';
 import DOMPurify from 'isomorphic-dompurify';
+import FerrariCanvas from './components/FerrariCanvas';
 
 function getMessageText(message: { parts?: Array<{ type: string; text?: string }> } | string | any) {
   // Simple fallback for content in ai sdk
@@ -143,10 +144,11 @@ export default function ChatPage() {
   }
 
   return (
-    <div ref={containerRef} className="flex h-screen w-full bg-[#FDFCFB] text-[#111111] overflow-hidden selection:bg-black selection:text-white">
+    <div ref={containerRef} className="flex h-screen w-full bg-[#FDFCFB] text-[#111111] overflow-hidden selection:bg-black selection:text-white relative">
+      <FerrariCanvas />
       
       {/* Sidebar - Gemini Style minimal */}
-      <aside className="hidden lg:flex w-72 flex-col border-r border-black/5 bg-[#F9F9F8]">
+      <aside className="relative z-10 hidden lg:flex w-72 flex-col border-r border-black/5 bg-[#F9F9F8]">
         
         {/* Top Logo & New Chat */}
         <div className="p-6 pb-4">
@@ -205,10 +207,10 @@ export default function ChatPage() {
       </aside>
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col relative h-screen bg-white">
+      <main className="flex-1 flex flex-col relative h-screen bg-transparent z-10">
         
         {/* Mobile Header */}
-        <header className="lg:hidden flex items-center justify-between p-5 border-b border-black/5 bg-white z-10">
+        <header className="lg:hidden flex items-center justify-between p-5 border-b border-black/5 bg-white/50 backdrop-blur-md z-10">
            <h1 className="font-serif text-lg tracking-tight">XIAOMA<span className="italic text-black/40">Premium</span></h1>
            <button onClick={handleLogout} className="p-2 text-black/50"><LogOut className="w-4 h-4" /></button>
         </header>
@@ -217,16 +219,8 @@ export default function ChatPage() {
         <section className="flex-1 overflow-y-auto px-4 md:px-0 py-6 md:py-10">
            <div className="max-w-3xl mx-auto w-full">
               {messages.length === 0 ? (
-                <div className="flex flex-col h-[60vh] justify-center items-center text-center px-4">
-                   <div className="w-12 h-12 bg-black rounded-3xl flex items-center justify-center mb-8 shadow-[0_10px_40px_rgba(0,0,0,0.15)]">
-                      <Sparkles className="w-5 h-5 text-white" />
-                   </div>
-                   <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl tracking-tight leading-[1] mb-6 max-w-lg">
-                      Minimal.<br/> Intelligent.
-                   </h1>
-                   <p className="text-black/40 text-sm md:text-base font-light">
-                      {isGuest ? '欢迎进入沉浸式白板模型。您当前为访客身份，仅限查看。' : '后端身份已认证 (admin)。开始体验智能对话。'}
-                   </p>
+                <div className="flex h-[80vh] items-center justify-center">
+                   {/* Completely empty space to let Ferrari Canvas dominate */}
                 </div>
               ) : (
                 <div className="space-y-8 pb-32">
@@ -240,7 +234,7 @@ export default function ChatPage() {
                                <Sparkles className="w-3.5 h-3.5 text-white" />
                             </div>
                           )}
-                          <div className={`max-w-[100%] md:max-w-[85%] ${isUser ? 'bg-[#F2F2F2] px-5 py-4 rounded-[1.5rem] rounded-tr-lg text-black shadow-[0_2px_10px_rgba(0,0,0,0.01)]' : 'pt-2'}`}>
+                          <div className={`max-w-[100%] md:max-w-[85%] ${isUser ? 'bg-[#F2F2F2]/80 backdrop-blur-sm px-5 py-4 rounded-[1.5rem] rounded-tr-lg text-black shadow-[0_2px_10px_rgba(0,0,0,0.01)]' : 'pt-2'}`}>
                              <div className={`prose max-w-none text-[15px] leading-relaxed ${isUser ? 'text-black' : 'text-black/80 prose-headings:font-serif prose-headings:font-normal'}`}>
                                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                                   {text || ''}
@@ -274,7 +268,7 @@ export default function ChatPage() {
         </section>
 
         {/* Input Area */}
-        <div className="absolute bottom-0 left-0 w-full px-4 md:px-0 pb-8 pt-20 bg-gradient-to-t from-white via-white to-transparent pointer-events-none">
+        <div className="absolute bottom-0 left-0 w-full px-4 md:px-0 pb-8 pt-20 bg-gradient-to-t from-[#FDFCFB] via-[#FDFCFB]/80 to-transparent pointer-events-none">
            <div className="max-w-3xl mx-auto w-full pointer-events-auto">
               
               {guestNotice && (
@@ -285,7 +279,7 @@ export default function ChatPage() {
 
               <form 
                 onSubmit={handleSend}
-                className="relative bg-[#F9F9F8] border border-black/10 rounded-[2rem] p-2 flex items-end shadow-[0_8px_30px_rgba(0,0,0,0.04)] focus-within:bg-white focus-within:shadow-[0_8px_30px_rgba(0,0,0,0.08)] focus-within:border-black/20 transition-all duration-300"
+                className="relative bg-[#F9F9F8]/60 backdrop-blur-md border border-black/10 rounded-[2rem] p-2 flex items-end shadow-[0_8px_30px_rgba(0,0,0,0.04)] focus-within:bg-white/80 focus-within:shadow-[0_8px_30px_rgba(0,0,0,0.08)] focus-within:border-black/20 transition-all duration-300"
               >
                  <textarea
                    value={input}
