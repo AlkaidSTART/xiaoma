@@ -87,27 +87,20 @@ export default function LoginPage() {
     }
   };
 
-  const handleGuest = async () => {
+  const handleGuestLogin = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'Guest', password: '' })
+      // Direct guest login as requested
+      login('Guest', 'guest');
+      gsap.to(containerRef.current, {
+        opacity: 0,
+        y: -10,
+        duration: 0.6,
+        ease: 'power3.inOut',
+        onComplete: () => {
+          router.push('/');
+        },
       });
-      const data = await res.json();
-      if (data.success) {
-        login('Guest', 'guest');
-        gsap.to(containerRef.current, {
-          opacity: 0,
-          y: -20,
-          duration: 0.6,
-          ease: 'power3.inOut',
-          onComplete: () => {
-            router.push('/');
-          },
-        });
-      }
     } finally {
       setLoading(false);
     }
@@ -129,9 +122,9 @@ export default function LoginPage() {
         <div className="fade-up flex items-center gap-2 group cursor-pointer">
           <div className="overflow-hidden">
              <span className="block font-serif italic text-2xl tracking-tighter leading-none group-hover:-translate-y-full transition-transform duration-500">XiaoMa</span>
-             <span className="block font-serif italic text-2xl tracking-tighter leading-none group-hover:-translate-y-full transition-transform duration-500 absolute">Intelligence</span>
+             <span className="block font-serif italic text-2xl tracking-tighter leading-none group-hover:-translate-y-full transition-transform duration-500 absolute">intelligentence</span>
           </div>
-          <span className="text-[10px] uppercase tracking-widest opacity-40 ml-4 hidden sm:block">Internal Access Only</span>
+          <span className="text-[10px] uppercase tracking-widest opacity-40 ml-4 hidden sm:block"></span>
         </div>
         
         <div className="fade-up text-[10px] uppercase font-semibold tracking-[0.2em] opacity-40">
@@ -147,25 +140,18 @@ export default function LoginPage() {
           <div className="max-w-xl z-10">
             <div className="fade-up mb-12 flex items-center gap-3">
                <ShieldCheck size={16} strokeWidth={1} />
-               <h2 className="uppercase tracking-[0.3em] text-[9px] font-bold text-black/40">Secure Identity Gateway</h2>
+               <h2 className="uppercase tracking-[0.3em] text-[9px] font-bold text-black/40">安全身份校验网关</h2>
             </div>
             
             <h1 className="fade-up font-serif text-6xl md:text-8xl lg:text-9xl leading-[0.9] tracking-tighter mb-10">
-               Define the<br/>
-               <span className="italic opacity-30">Boundary.</span>
+               more creative<br/>
+               <span className="italic opacity-30">more possibilities</span>
             </h1>
             
             <div className="fade-up flex flex-col sm:flex-row gap-8 items-start sm:items-center">
               <p className="max-w-xs text-xs md:text-sm leading-relaxed text-black/40 font-light">
                 请输入管理员凭据以访问核心神经中枢。未经授权的尝试将被后台加密协议记录。
               </p>
-              <div className="h-px w-12 bg-black/10 hidden sm:block"></div>
-              <button 
-                onClick={handleGuest}
-                className="group flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold hover:opacity-60 transition-opacity"
-              >
-                Guest Entrance <ArrowUpRight size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-              </button>
             </div>
           </div>
           
@@ -180,18 +166,18 @@ export default function LoginPage() {
            <form onSubmit={handleLogin} className="w-full max-w-md mx-auto space-y-7 md:space-y-8">
               <div className="space-y-7">
                 <div className="fade-up relative">
-                  <span className="absolute -top-6 left-0 text-[9px] uppercase tracking-[0.2em] font-bold text-black/30">Identifier</span>
+                  <span className="absolute -top-6 left-0 text-[10px] uppercase tracking-[0.2em] font-bold text-black/30">username</span>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Account ID"
+                    placeholder="账号 ID"
                     className="w-full bg-transparent border-b border-black/10 pb-4 text-sm tracking-wide focus:border-black transition-colors focus:ring-0 rounded-none placeholder:text-black/10"
                   />
                 </div>
 
                 <div className="fade-up relative">
-                  <span className="absolute -top-6 left-0 text-[9px] uppercase tracking-[0.2em] font-bold text-black/30">Security Key</span>
+                  <span className="absolute -top-6 left-0 text-[10px] uppercase tracking-[0.2em] font-bold text-black/30">password</span>
                   <input
                     type="password"
                     value={password}
@@ -209,28 +195,38 @@ export default function LoginPage() {
                 </p>
               ) : null}
 
-              <div className="fade-up pt-3 md:pt-4">
+              <div className="fade-up pt-3 md:pt-4 flex flex-col gap-4">
                 <button
                   ref={magneticRef}
                   onMouseMove={handleMagnetic}
                   onMouseLeave={resetMagnetic}
                   type="submit"
                   disabled={loading}
-                  className="w-full flex items-center justify-between bg-black text-white px-7 py-4 group transition-transform active:scale-[0.98] disabled:opacity-30"
+                  className="w-full flex items-center justify-between bg-black text-white px-7 py-5 group transition-transform active:scale-[0.98] disabled:opacity-30 rounded-sm"
                 >
                   <span className="text-[10px] uppercase tracking-[0.3em] font-bold">
-                    {loading ? 'Authenticating...' : 'Establish Connection'}
+                    {loading ? '正在验证身份...' : '登录'}
                   </span>
                   <div className="relative overflow-hidden w-4 h-4">
                     <ChevronRight size={16} className="absolute group-hover:translate-x-full transition-transform duration-500" />
                     <ChevronRight size={16} className="absolute -translate-x-full group-hover:translate-x-0 transition-transform duration-500" />
                   </div>
                 </button>
+
+                {/* 游客登录入口 */}
+                <button 
+                  type="button"
+                  onClick={handleGuestLogin}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-2 py-4 text-[10px] uppercase tracking-widest font-bold opacity-30 hover:opacity-100 transition-opacity"
+                >
+                  以游客身份进入核心 / Guest Entrance <ArrowUpRight size={14} />
+                </button>
               </div>
 
               <div className="fade-up text-center">
                 <span className="text-[9px] uppercase tracking-widest opacity-20">
-                  Node Status: Online & SSL Secured
+                  节点状态: 在线且 SSL 加密
                 </span>
               </div>
            </form>
