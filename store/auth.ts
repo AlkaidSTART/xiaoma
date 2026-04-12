@@ -4,7 +4,8 @@ import { persist } from 'zustand/middleware';
 interface AuthState {
   isAuthenticated: boolean;
   username: string | null;
-  login: (username: string) => void;
+  role: 'admin' | 'guest' | null;
+  login: (username: string, role?: 'admin' | 'guest') => void;
   logout: () => void;
 }
 
@@ -13,8 +14,9 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       isAuthenticated: false,
       username: null,
-      login: (username: string) => set({ isAuthenticated: true, username }),
-      logout: () => set({ isAuthenticated: false, username: null }),
+      role: null,
+      login: (username: string, role: 'admin' | 'guest' = 'guest') => set({ isAuthenticated: true, username, role }),
+      logout: () => set({ isAuthenticated: false, username: null, role: null }),
     }),
     {
       name: 'auth-storage',
