@@ -101,7 +101,10 @@ export default function ChatPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mcpMenuOpen, setMcpMenuOpen] = useState(false);
   const [mcpConfigs, setMcpConfigs] = useState<Record<string, McpConfigRecord>>({});
-  const [selectedModel, setSelectedModel] = useState<string>(availableModels[0]?.name ?? 'deepseek-chat');
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    if (typeof window === 'undefined') return availableModels[0]?.name ?? 'deepseek-chat';
+    return window.localStorage.getItem('selected-model') ?? availableModels[0]?.name ?? 'deepseek-chat';
+  });
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const selectedModelConfig = availableModels.find((model) => model.name === selectedModel);
   const modeLabelMap: Record<string, string> = {
@@ -111,9 +114,43 @@ export default function ChatPage() {
     coder: '代码',
   };
   const selectedModelLabel = selectedModelConfig
-    ? `XiaoMa-${selectedModelConfig.provider}`
+    ? `${selectedModelConfig.displayName} · ${selectedModelConfig.provider}`
     : selectedModel;
   const selectedModelModeLabel = selectedModelConfig ? modeLabelMap[selectedModelConfig.mode] : '均衡';
+
+  async function loadSidebar() {
+    try {
+      const chats = (await getAllChats()) as unknown as ChatRecord[];
+      const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
+      const expireBefore = Date.now() - tenDaysMs;
+
+      const isEmptyChat = (chat: ChatRecord) => {
+        if (!chat.messages || chat.messages.length === 0) return true;
+        return chat.messages.every((msg) => getMessageText(msg).trim().length === 0);
+      };
+
+      const staleEmptyChats = chats.filter((chat) => chat.updatedAt < expireBefore && isEmptyChat(chat));
+
+      if (staleEmptyChats.length > 0) {
+        await Promise.all(staleEmptyChats.map((chat) => deleteChat(chat.id)));
+      }
+
+      const visibleChats = chats.filter((chat) => !staleEmptyChats.some((stale) => stale.id === chat.id));
+      setSidebarChats(visibleChats.sort((a, b) => b.updatedAt - a.updatedAt));
+
+      if (staleEmptyChats.length > 0) {
+        setCleanupTip(`已自动清理 ${staleEmptyChats.length} 条超过 10 天且无内容的对话。`);
+      } else {
+        setCleanupTip('侧边栏中 10 天无内容的对话将自动清理。');
+      }
+    } catch (e) {
+      console.error('IDB load error', e);
+    }
+  }
+
+  useEffect(() => {
+    window.localStorage.setItem('selected-model', selectedModel);
+  }, [selectedModel]);
 
   const transportMcpConfigs = React.useMemo(
     () =>
@@ -189,37 +226,6 @@ export default function ChatPage() {
     };
   }, [currentChatId, isAuthenticated, setMessages]);
 
-  // Load sidebar chats
-  async function loadSidebar() {
-    try {
-      const chats = (await getAllChats()) as unknown as ChatRecord[];
-      const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
-      const expireBefore = Date.now() - tenDaysMs;
-
-      const isEmptyChat = (chat: ChatRecord) => {
-        if (!chat.messages || chat.messages.length === 0) return true;
-        return chat.messages.every((msg) => getMessageText(msg).trim().length === 0);
-      };
-
-      const staleEmptyChats = chats.filter((chat) => chat.updatedAt < expireBefore && isEmptyChat(chat));
-
-      if (staleEmptyChats.length > 0) {
-        await Promise.all(staleEmptyChats.map((chat) => deleteChat(chat.id)));
-      }
-
-      const visibleChats = chats.filter((chat) => !staleEmptyChats.some((stale) => stale.id === chat.id));
-      setSidebarChats(visibleChats.sort((a, b) => b.updatedAt - a.updatedAt));
-
-      if (staleEmptyChats.length > 0) {
-        setCleanupTip(`已自动清理 ${staleEmptyChats.length} 条超过 10 天且无内容的对话。`);
-      } else {
-        setCleanupTip('侧边栏中 10 天无内容的对话将自动清理。');
-      }
-    } catch (e) {
-      console.error('IDB load error', e);
-    }
-  }
-
   useEffect(() => {
     if (hasHydrated && !isAuthenticated) {
       router.replace('/login');
@@ -228,9 +234,14 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    
-    // Load initial ID
-    loadSidebar();
+
+    const frame = window.requestAnimationFrame(() => {
+      loadSidebar();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -388,7 +399,10 @@ export default function ChatPage() {
 
     setGuestNotice('');
     addChatEvent(currentChatId, 'message', { model: selectedModel, note: input.slice(0, 120) }).catch(console.error);
-    sendMessage({ text: input });
+    sendMessage(
+      { text: input },
+      { body: { model: selectedModel, mcpConfigs: transportMcpConfigs } }
+    );
     
     setInput('');
   };
@@ -413,15 +427,15 @@ export default function ChatPage() {
   }
 
   return (
-    <div ref={containerRef} className="flex h-screen w-full bg-[#F7F7F7] text-[#111111] overflow-hidden selection:bg-black selection:text-white relative">
+    <div ref={containerRef} className="paper-lines flex h-screen w-full bg-[#FBFAF4] text-[#111111] overflow-hidden selection:bg-black selection:text-white relative">
       <div className="noise-overlay pointer-events-none fixed inset-0 z-0 opacity-[0.03]" />
       
       {/* Sidebar - Gemini Style minimal */}
-      <aside ref={sideBarRef} className="relative z-10 hidden lg:flex w-72 flex-col border-r border-black/5 bg-[#F9F9F9]">
+      <aside ref={sideBarRef} className="relative z-10 hidden lg:flex w-72 flex-col border-r border-black/10 bg-[#F3EFE3]">
         
         {/* Top Logo & New Chat */}
         <div className="p-6 pb-4">
-          <h1 className="font-serif text-xl tracking-tight leading-none mb-6">XIAOMA<span className="italic text-black/40">Premium</span></h1>
+          <h1 className="font-serif text-xl tracking-tight leading-none mb-6">XIAOMA<span className="italic text-black/40">Archive</span></h1>
 
           <div className="mb-3 rounded-2xl border border-black/5 bg-white/85 p-2 backdrop-blur-sm">
             <button
@@ -550,7 +564,7 @@ export default function ChatPage() {
         
         {/* Mobile Header */}
           <header className="lg:hidden flex items-center justify-between p-4 border-b border-black/10 bg-white/90 backdrop-blur-md z-10">
-           <h1 className="font-serif text-lg tracking-tight">XIAOMA<span className="italic text-black/40">Premium</span></h1>
+           <h1 className="font-serif text-lg tracking-tight">XIAOMA<span className="italic text-black/40">Archive</span></h1>
             <div className="flex items-center gap-1">
              <button onClick={() => setMobileSidebarOpen(true)} className="p-2 text-black/60" title="会话记录"><Menu className="w-4 h-4" /></button>
              <button onClick={handleCreateNewChat} className="p-2 text-black/60" title="新建对话"><Plus className="w-4 h-4" /></button>
@@ -701,7 +715,7 @@ export default function ChatPage() {
                              >
                                <span className="w-[6px] h-[6px] rounded-full shrink-0 bg-black/55" />
                                <div className="min-w-0 flex-1">
-                                 <div className="truncate text-sm font-medium">{`XiaoMa-${model.provider}`}</div>
+                                 <div className="truncate text-sm font-medium">{model.displayName}</div>
                                  <div className={`text-[10px] ${selectedModel === model.name ? 'text-white/70' : 'text-black/45'}`}>
                                    {`${model.displayName} · ${modeLabelMap[model.mode]}`}
                                  </div>
