@@ -1,6 +1,8 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import type { UIMessage } from 'ai';
 
+export type McpServerKey = 'context7' | 'github' | 'playwright' | 'filesystem' | 'chrome' | 'macos';
+
 interface ChatDBSchema extends DBSchema {
   chats: {
     key: string;
@@ -26,6 +28,16 @@ interface ChatDBSchema extends DBSchema {
     indexes: {
       'by-timestamp': number;
       'by-chat': string;
+    };
+  };
+  mcpConfigs: {
+    key: McpServerKey;
+    value: {
+      id: McpServerKey;
+      enabled: boolean;
+      apiKey: string;
+      params: string;
+      updatedAt: number;
     };
   };
 }
@@ -57,7 +69,7 @@ function normalizeMessages(messages: UIMessage[]) {
 export const initDB = () => {
   if (typeof window === 'undefined') return null;
   if (!dbPromise) {
-    dbPromise = openDB<ChatDBSchema>('gemini-clone-db', 2, {
+    dbPromise = openDB<ChatDBSchema>('gemini-clone-db', 3, {
       upgrade(db) {
         if (!db.objectStoreNames.contains('chats')) {
           const store = db.createObjectStore('chats', { keyPath: 'id' });
@@ -71,6 +83,10 @@ export const initDB = () => {
           });
           eventStore.createIndex('by-timestamp', 'timestamp');
           eventStore.createIndex('by-chat', 'chatId');
+        }
+
+        if (!db.objectStoreNames.contains('mcpConfigs')) {
+          db.createObjectStore('mcpConfigs', { keyPath: 'id' });
         }
       },
     });
@@ -123,4 +139,59 @@ export const deleteChat = async (id: string) => {
   const db = await initDB();
   if (!db) return;
   await db.delete('chats', id);
+};
+
+export const clearAllChats = async () => {
+  const db = await initDB();
+  if (!db) return;
+  await db.clear('chats');
+  await db.clear('chatEvents');
+};
+
+export type McpConfigRecord = {
+  enabled: boolean;
+  apiKey: string;
+  params: string;
+};
+
+const DEFAULT_MCP_CONFIG: McpConfigRecord = {
+  enabled: false,
+  apiKey: '',
+  params: '',
+};
+
+export const getMcpConfig = async (serverKey: McpServerKey): Promise<McpConfigRecord> => {
+  const db = await initDB();
+  if (!db) return DEFAULT_MCP_CONFIG;
+  const config = await db.get('mcpConfigs', serverKey);
+  if (!config) return DEFAULT_MCP_CONFIG;
+  return {
+    enabled: config.enabled,
+    apiKey: config.apiKey,
+    params: config.params,
+  };
+};
+
+export const getAllMcpConfigs = async (): Promise<Record<string, McpConfigRecord>> => {
+  const db = await initDB();
+  if (!db) return {};
+  const entries = await db.getAll('mcpConfigs');
+  return entries.reduce<Record<string, McpConfigRecord>>((accumulator, item) => {
+    accumulator[item.id] = {
+      enabled: item.enabled,
+      apiKey: item.apiKey,
+      params: item.params,
+    };
+    return accumulator;
+  }, {});
+};
+
+export const saveMcpConfig = async (serverKey: McpServerKey, config: McpConfigRecord) => {
+  const db = await initDB();
+  if (!db) return;
+  await db.put('mcpConfigs', {
+    id: serverKey,
+    ...config,
+    updatedAt: Date.now(),
+  });
 };

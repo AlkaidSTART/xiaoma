@@ -11,8 +11,9 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { saveChat, getChat, getAllChats, deleteChat, addChatEvent } from '@/lib/db';
+import { saveChat, getChat, getAllChats, deleteChat, addChatEvent, clearAllChats, getAllMcpConfigs, type McpConfigRecord } from '@/lib/db';
 import { availableModels } from '@/lib/model-config';
+import { MCP_SERVER_DEFINITIONS, type McpServerKey } from '@/lib/mcp';
 import { v4 as uuidv4 } from 'uuid';
 
 interface ChatMessage {
@@ -98,6 +99,8 @@ export default function ChatPage() {
   const [cleanupTip, setCleanupTip] = useState('侧边栏中 10 天无内容的对话将自动清理。');
   const [showDeleteModal, setShowDeleteModal] = useState<{ show: boolean; id: string }>({ show: false, id: '' });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mcpMenuOpen, setMcpMenuOpen] = useState(false);
+  const [mcpConfigs, setMcpConfigs] = useState<Record<string, McpConfigRecord>>({});
   const [selectedModel, setSelectedModel] = useState<string>(availableModels[0]?.name ?? 'deepseek-chat');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const selectedModelConfig = availableModels.find((model) => model.name === selectedModel);
@@ -112,10 +115,25 @@ export default function ChatPage() {
     : selectedModel;
   const selectedModelModeLabel = selectedModelConfig ? modeLabelMap[selectedModelConfig.mode] : '均衡';
 
+  const transportMcpConfigs = React.useMemo(
+    () =>
+      MCP_SERVER_DEFINITIONS.map((server) => ({
+        key: server.key,
+        title: server.title,
+        enabled: Boolean(mcpConfigs[server.key]?.enabled),
+        configured: Boolean(
+          mcpConfigs[server.key]?.enabled || mcpConfigs[server.key]?.apiKey || mcpConfigs[server.key]?.params
+        ),
+        params: mcpConfigs[server.key]?.params || '',
+        apiKeyConfigured: Boolean(mcpConfigs[server.key]?.apiKey),
+      })),
+    [mcpConfigs]
+  );
+
   const transport = React.useMemo(() => new DefaultChatTransport({ 
     api: '/api/third-party',
-    body: { model: selectedModel }
-  }), [selectedModel]);
+    body: { model: selectedModel, mcpConfigs: transportMcpConfigs }
+  }), [selectedModel, transportMcpConfigs]);
 
   const { messages, setMessages, sendMessage, status, error } = useChat({
     transport,
@@ -137,6 +155,28 @@ export default function ChatPage() {
     if (!isAuthenticated || !currentChatId) return;
     let cancelled = false;
 
+    const saveCurrentChat = async () => {
+      const title = getMessageText(messages[0] || { text: 'New Conversation' }).slice(0, 30) || 'New Conversation';
+      await saveChat(currentChatId, title, messages as UIMessage[]);
+      if (!cancelled) {
+        loadSidebar();
+      }
+    };
+
+    const timer = window.setTimeout(() => {
+      saveCurrentChat().catch(console.error);
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [messages, currentChatId, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentChatId) return;
+    let cancelled = false;
+
     const restoreCurrentChat = async () => {
       const chat = await getChat(currentChatId);
       if (cancelled) return;
@@ -150,7 +190,7 @@ export default function ChatPage() {
   }, [currentChatId, isAuthenticated, setMessages]);
 
   // Load sidebar chats
-  const loadSidebar = async () => {
+  async function loadSidebar() {
     try {
       const chats = (await getAllChats()) as unknown as ChatRecord[];
       const tenDaysMs = 10 * 24 * 60 * 60 * 1000;
@@ -178,7 +218,7 @@ export default function ChatPage() {
     } catch (e) {
       console.error('IDB load error', e);
     }
-  };
+  }
 
   useEffect(() => {
     if (hasHydrated && !isAuthenticated) {
@@ -191,6 +231,11 @@ export default function ChatPage() {
     
     // Load initial ID
     loadSidebar();
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    getAllMcpConfigs().then(setMcpConfigs).catch(console.error);
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -302,6 +347,19 @@ export default function ChatPage() {
     setShowDeleteModal({ show: true, id });
   };
 
+  const handleClearAllChats = async () => {
+    const ok = window.confirm('确定删除全部历史记录吗？此操作不可恢复。');
+    if (!ok) return;
+    await clearAllChats();
+    setMessages([]);
+    const nextId = uuidv4();
+    setCurrentChatId(nextId);
+    await saveChat(nextId, 'New Conversation', []);
+    await addChatEvent(nextId, 'create', { note: 'create new conversation after clear all' });
+    setGuestNotice('已清空全部记录');
+    loadSidebar();
+  };
+
   const confirmDelete = async () => {
     const { id } = showDeleteModal;
     if (id) {
@@ -332,19 +390,6 @@ export default function ChatPage() {
     addChatEvent(currentChatId, 'message', { model: selectedModel, note: input.slice(0, 120) }).catch(console.error);
     sendMessage({ text: input });
     
-    // Quick local save trigger after pushing user message
-    setTimeout(async () => {
-      const title = getMessageText(messages[0] || { text: input }).slice(0, 30) || 'New Conversation';
-      const userMessage = {
-        id: uuidv4(),
-        role: 'user',
-        content: input,
-        parts: [{ type: 'text', text: input }],
-      } as unknown as UIMessage;
-      await saveChat(currentChatId, title, [...messages, userMessage]);
-      loadSidebar();
-    }, 100);
-    
     setInput('');
   };
 
@@ -355,6 +400,13 @@ export default function ChatPage() {
   };
 
   const submitDisabled = status !== 'ready' || input.trim().length === 0 || !isAuthenticated || isGuest;
+
+  const getMcpStatusTone = (serverKey: McpServerKey) => {
+    const config = mcpConfigs[serverKey];
+    if (config?.enabled) return 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]';
+    if (config?.apiKey || config?.params) return 'bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.12)]';
+    return 'bg-black/20';
+  };
 
   if (!hasHydrated || !isAuthenticated) {
     return <div className="flex h-screen w-full bg-[#FAFAFA] text-[#111111] overflow-hidden" />;
@@ -370,6 +422,58 @@ export default function ChatPage() {
         {/* Top Logo & New Chat */}
         <div className="p-6 pb-4">
           <h1 className="font-serif text-xl tracking-tight leading-none mb-6">XIAOMA<span className="italic text-black/40">Premium</span></h1>
+
+          <div className="mb-3 rounded-2xl border border-black/5 bg-white/85 p-2 backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={() => setMcpMenuOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left hover:bg-black/[0.03]"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-semibold tracking-[0.2em] text-black/35">MCP 模块</span>
+                <span className="text-[10px] text-black/30">{MCP_SERVER_DEFINITIONS.length} 项</span>
+              </div>
+              <ChevronDown className={`h-3.5 w-3.5 text-black/45 transition-transform duration-300 ${mcpMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            <div
+              className={`overflow-hidden transition-[max-height,opacity,transform] duration-500 ease-[cubic-bezier(0.22,0.8,0.22,1)] ${
+                mcpMenuOpen ? 'max-h-[520px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 translate-y-2'
+              }`}
+            >
+              <div className="px-1 pb-1 pt-2">
+                <div className="grid grid-cols-1 gap-1.5">
+                  {MCP_SERVER_DEFINITIONS.map((item) => {
+                    const isConfigured = Boolean(mcpConfigs[item.key]?.enabled || mcpConfigs[item.key]?.apiKey || mcpConfigs[item.key]?.params);
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => router.push(`/mcp/${item.key}`)}
+                        className="flex items-center gap-2 rounded-xl border border-black/5 bg-black/[0.015] px-2.5 py-2 text-left text-[11px] text-black/75 transition-transform duration-200 hover:translate-x-0.5 hover:bg-black/[0.03]"
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${getMcpStatusTone(item.key)}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{item.title}</div>
+                          <div className="truncate text-[10px] text-black/35">{item.description}</div>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.16em] ${isConfigured ? 'bg-emerald-500/10 text-emerald-700' : 'bg-black/[0.04] text-black/35'}`}>
+                          {isConfigured ? '已配' : '未配'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push('/mcp/context7')}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-[11px] text-black/75 hover:bg-black/[0.02]"
+                >
+                  打开 MCP 配置页
+                </button>
+              </div>
+            </div>
+          </div>
           
           <button 
             onClick={handleCreateNewChat}
@@ -386,6 +490,13 @@ export default function ChatPage() {
           <div className="mx-2 mb-3 rounded-lg border border-black/5 bg-black/[0.02] px-2.5 py-2 text-[11px] leading-snug text-black/55">
             {cleanupTip}
           </div>
+          <button
+            type="button"
+            onClick={handleClearAllChats}
+            className="mx-2 mb-3 flex w-[calc(100%-1rem)] items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50/70 px-2.5 py-2 text-[11px] text-red-600 hover:bg-red-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> 删除全部记录
+          </button>
           {sidebarChats.map((chat) => (
             <div
               key={chat.id}
@@ -515,8 +626,8 @@ export default function ChatPage() {
                                      </div>
                                    </section>
                                  )}
-                               </div>
-                             )}
+                              </div>
+                            )}
                           </div>
                        </article>
                      );
@@ -670,11 +781,56 @@ export default function ChatPage() {
               </button>
             </div>
             <div className="p-4 pb-2">
+                <div className="mb-3 rounded-2xl border border-black/10 bg-black/[0.015] p-2">
+                  <button
+                    type="button"
+                    onClick={() => setMcpMenuOpen((prev) => !prev)}
+                    className="flex w-full items-center justify-between rounded-xl px-2 py-1.5"
+                  >
+                    <span className="text-[10px] uppercase font-semibold tracking-[0.2em] text-black/35">MCP 模块</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-black/45 transition-transform duration-300 ${mcpMenuOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  <div
+                    className={`overflow-hidden transition-[max-height,opacity,transform] duration-500 ease-[cubic-bezier(0.22,0.8,0.22,1)] ${
+                      mcpMenuOpen ? 'max-h-[520px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 translate-y-2'
+                    }`}
+                  >
+                    <div className="space-y-1.5 px-1 pb-1 pt-2">
+                      {MCP_SERVER_DEFINITIONS.map((item) => {
+                        const isConfigured = Boolean(mcpConfigs[item.key]?.enabled || mcpConfigs[item.key]?.apiKey || mcpConfigs[item.key]?.params);
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => router.push(`/mcp/${item.key}`)}
+                            className="flex w-full items-center gap-2 rounded-xl border border-black/10 bg-white px-2.5 py-2 text-left text-[11px] text-black/70"
+                          >
+                            <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${getMcpStatusTone(item.key)}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{item.title}</div>
+                              <div className="truncate text-[10px] text-black/35">{item.description}</div>
+                            </div>
+                            <span className={`rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.16em] ${isConfigured ? 'bg-emerald-500/10 text-emerald-700' : 'bg-black/[0.04] text-black/35'}`}>
+                              {isConfigured ? '已配' : '未配'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               <button
                 onClick={handleCreateNewChat}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl border border-black/10 bg-black text-white py-3 text-sm"
               >
                 <Plus className="w-4 h-4" /> 新建对话
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllChats}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50/70 py-2.5 text-xs text-red-600"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> 删除全部记录
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
@@ -706,7 +862,6 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Custom Delete Confirmation Modal */}
       {showDeleteModal.show && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div 

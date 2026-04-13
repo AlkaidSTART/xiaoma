@@ -12,10 +12,9 @@ export async function POST(req: Request) {
       cookieStore.set('auth_token', 'admin', { httpOnly: true, path: '/' });
       return NextResponse.json({ success: true, role: 'admin', username: username });
     }
-    
-    cookieStore.set('auth_token', 'guest', { httpOnly: true, path: '/' });
-    return NextResponse.json({ success: true, role: 'guest', username: username || 'Guest' });
-  } catch (error) {
+
+    return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401 });
+  } catch {
     return NextResponse.json({ success: false, error: 'Invalid request' }, { status: 400 });
   }
 }
