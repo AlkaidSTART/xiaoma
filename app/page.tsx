@@ -323,7 +323,7 @@ export default function ChatPage() {
       return;
     }
     if (isGuest) {
-      setGuestNotice('访客模式无生成权限。如需使用，请向管理员申请账号');
+      setGuestNotice('访客模式无生成权限。如需使用，请向管理员(2595006848@qq.com)申请账号');
       return;
     }
     if (!input.trim()) return;
