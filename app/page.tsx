@@ -388,28 +388,33 @@ export default function ChatPage() {
                      const isUser = m.role === 'user';
                      const text = getMessageText(m);
                      return (
-                       <article key={m.id} className={`chat-entry-anim flex w-full ${isUser ? 'justify-end pl-4 md:pl-10' : 'justify-start pr-4 md:pr-10'}`}>
+                       <article key={m.id} className={`chat-entry-anim flex w-full gap-4 ${isUser ? 'justify-end md:pl-10' : 'justify-start md:pr-10'}`}>
                           {!isUser && (
-                            <div className="w-8 h-8 rounded-full bg-black shrink-0 flex items-center justify-center mt-1 mr-4 shadow-sm">
-                               <Sparkles className="w-3.5 h-3.5 text-white" />
+                            <div className="w-7 h-7 rounded-[10px] bg-gradient-to-b from-gray-800 to-black shrink-0 flex items-center justify-center mt-2 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
+                               <div className="w-2 h-2 bg-white/90 rounded-[3px] rotate-45" />
                             </div>
                           )}
-                          <div className={`max-w-[100%] md:max-w-[85%] ${isUser ? 'bg-[#F2F2F2]/80 backdrop-blur-sm px-5 py-4 rounded-[1.5rem] rounded-tr-lg text-black shadow-[0_2px_10px_rgba(0,0,0,0.01)]' : 'pt-2'}`}>
-                             <div className={`prose max-w-none text-[15px] leading-relaxed ${isUser ? 'text-black' : 'text-black/80 prose-headings:font-serif prose-headings:font-normal'}`}>
+                          <div className={`max-w-[85%] md:max-w-[75%] ${isUser ? 'bg-black text-white px-5 py-3.5 rounded-[1.5rem] rounded-tr-[8px] shadow-[0_4px_16px_rgba(0,0,0,0.06)]' : 'pt-2.5'}`}>
+                             <div className={`prose max-w-none text-[15px] leading-relaxed ${isUser ? 'text-white/95 prose-invert' : 'text-black/85 prose-headings:font-serif prose-headings:font-normal'}`}>
                                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                                   {text || ''}
                                 </ReactMarkdown>
                              </div>
                           </div>
+                          {isUser && (
+                            <div className="hidden sm:flex w-7 h-7 rounded-[10px] bg-gradient-to-b from-gray-100 to-gray-200 border border-black/5 shrink-0 items-center justify-center mt-2 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
+                               <div className="w-2 h-2 bg-black/40 rounded-full" />
+                            </div>
+                          )}
                        </article>
                      );
                    })}
                    {status === 'streaming' && (
-                     <article className="flex w-full justify-start pr-10 chat-entry-anim">
-                        <div className="w-8 h-8 rounded-full bg-black shrink-0 flex items-center justify-center mt-1 mr-4">
-                           <Sparkles className="w-3.5 h-3.5 text-white" />
+                     <article className="flex w-full gap-4 justify-start md:pr-10 chat-entry-anim">
+                        <div className="w-7 h-7 rounded-[10px] bg-gradient-to-b from-gray-800 to-black shrink-0 flex items-center justify-center mt-2 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
+                           <div className="w-2 h-2 bg-white/90 rounded-[3px] rotate-45" />
                         </div>
-                        <div className="pt-2">
+                        <div className="pt-2.5">
                            <div className="w-1.5 h-4 bg-black/20 animate-pulse rounded-full mt-1.5 min-h-[1.2rem]"></div>
                         </div>
                      </article>
@@ -440,23 +445,23 @@ export default function ChatPage() {
               <form 
                 ref={formRef}
                 onSubmit={handleSend}
-                className="relative bg-white/70 backdrop-blur-md border border-black/5 rounded-[2rem] p-2 flex items-end shadow-[0_4px_24px_rgba(0,0,0,0.03)] focus-within:bg-white focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.06)] focus-within:border-black/10 transition-all duration-500"
+                className="relative bg-white/80 backdrop-blur-xl border border-black/5 rounded-[1.75rem] p-2 flex flex-col shadow-[0_8px_24px_rgba(0,0,0,0.04)] focus-within:bg-white focus-within:shadow-[0_12px_40px_rgba(0,0,0,0.08)] focus-within:border-black/10 transition-all duration-200"
               >
-                 <div className="absolute left-4 right-14 top-3 z-10 flex items-center justify-between gap-3 pointer-events-auto">
+                 {/* Top Bar for Model Select */}
+                 <div className="flex items-center justify-between px-3 pt-2 pb-1 gap-3 pointer-events-auto">
                    <div className="relative">
                      <button
                        type="button"
                        onClick={() => setShowModelDropdown(!showModelDropdown)}
-                       className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/85 px-3 py-1.5 text-[11px] font-medium text-black/75 shadow-sm backdrop-blur-md transition-all hover:border-black/20 hover:bg-white"
+                       className="group inline-flex items-center gap-2 rounded-xl px-2 py-1.5 text-[13px] font-medium text-black/70 transition-all hover:text-black hover:bg-black/5 active:scale-95"
                      >
-                       <Sparkles className="w-3.5 h-3.5" />
-                       <span className="max-w-[160px] truncate">{selectedModelLabel}</span>
-                       <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showModelDropdown ? 'rotate-180' : ''}`} />
+                       <span className="truncate tracking-wide">{selectedModelLabel}</span>
+                       <ChevronDown className={`w-4 h-4 opacity-50 transition-transform duration-200 ${showModelDropdown ? 'rotate-180 opacity-100' : ''}`} />
                      </button>
 
                      {showModelDropdown && (
-                       <div className="absolute left-0 top-[calc(100%+0.5rem)] w-[min(320px,80vw)] overflow-hidden rounded-[1.25rem] border border-black/10 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
-                         <div className="max-h-72 overflow-y-auto p-2">
+                       <div className="absolute left-0 bottom-full mb-2 w-[min(300px,94vw)] rounded-[1.25rem] border border-black/5 bg-white/95 backdrop-blur-3xl shadow-[0_8px_40px_rgba(0,0,0,0.12)] z-50 overflow-hidden transform-gpu origin-bottom-left animate-in fade-in zoom-in-95 duration-150">
+                         <div className="max-h-[50vh] overflow-y-auto p-1.5 scrollbar-hide">
                            {availableModels.map((model) => (
                              <button
                                key={model.name}
@@ -465,11 +470,10 @@ export default function ChatPage() {
                                  setSelectedModel(model.name);
                                  setShowModelDropdown(false);
                                }}
-                               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedModel === model.name ? 'bg-black/5 text-black font-medium' : 'text-black/65 hover:bg-black/[0.03]'}`}
+                               className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition-colors ${selectedModel === model.name ? 'bg-black text-white' : 'text-black/70 hover:bg-black/5'}`}
                              >
-                               <span className={`w-2 h-2 rounded-full ${model.type === 'general' ? 'bg-blue-500' : model.type === 'code' ? 'bg-emerald-500' : model.type === 'vl' ? 'bg-violet-500' : model.type === 'embedding' ? 'bg-amber-500' : model.type === 'reranker' ? 'bg-orange-500' : 'bg-zinc-500'}`} />
-                               <span className="truncate">{model.displayName}</span>
-                               <span className="ml-auto text-[10px] text-black/30">{model.date}</span>
+                               <span className={`w-[6px] h-[6px] rounded-full shrink-0 ${model.type === 'general' ? 'bg-blue-400' : model.type === 'code' ? 'bg-emerald-400' : model.type === 'vl' ? 'bg-violet-400' : model.type === 'embedding' ? 'bg-amber-400' : model.type === 'reranker' ? 'bg-orange-400' : 'bg-zinc-400'}`} />
+                               <span className="truncate text-sm font-medium">{model.displayName}</span>
                              </button>
                            ))}
                          </div>
@@ -477,45 +481,49 @@ export default function ChatPage() {
                      )}
                    </div>
 
-                   <span className="ml-auto text-[10px] uppercase tracking-[0.2em] text-black/30 hidden sm:inline">{isGuest ? 'Guest Mode' : 'Admin Mode'}</span>
+                   <span className="text-[10px] uppercase tracking-[0.2em] font-medium text-black/20 hidden sm:inline">{isGuest ? 'Guest Mode' : 'Admin Mode'}</span>
                  </div>
 
-                 <textarea
-                   value={input}
-                   onChange={(e) => setInput(e.target.value)}
-                   onFocus={() => {
-                     gsap.to(formRef.current, { 
-                       scale: 1.01,
-                       duration: 0.4, 
-                       ease: "power2.out",
-                       boxShadow: "0 12px 32px rgba(0,0,0,0.06)"
-                     });
-                   }}
-                   onBlur={() => {
-                     gsap.to(formRef.current, { 
-                       scale: 1,
-                       duration: 0.4, 
-                       ease: "power2.inOut",
-                       boxShadow: "0 4px 24px rgba(0,0,0,0.03)"
-                     });
-                   }}
-                   placeholder={isGuest ? "访客模式 (只读) ..." : "Ask Xiaoma Model..."}
-                   rows={1}
-                   className="flex-1 max-h-[200px] min-h-[44px] bg-transparent resize-none border-none outline-none px-4 py-10 text-sm text-black placeholder:text-black/20"
-                   onKeyDown={(e) => {
-                     if (e.key === 'Enter' && !e.shiftKey) {
-                       e.preventDefault();
-                       formRef.current?.requestSubmit();
-                     }
-                   }}
-                 />
-                 <button
-                   type="submit"
-                   disabled={submitDisabled}
-                   className="mb-1 mr-1 shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all disabled:opacity-30 disabled:bg-transparent disabled:text-black/50 bg-black text-white hover:scale-105"
-                 >
-                    <Send className="w-4 h-4 ml-0.5" />
-                 </button>
+                 <div className="flex items-end w-full relative">
+                   <textarea
+                     value={input}
+                     onChange={(e) => setInput(e.target.value)}
+                     onFocus={() => {
+                       gsap.killTweensOf(formRef.current);
+                       gsap.to(formRef.current, { 
+                         scale: 1.005,
+                         duration: 0.15, 
+                         ease: "power2.out",
+                       });
+                     }}
+                     onBlur={() => {
+                       gsap.to(formRef.current, { 
+                         scale: 1,
+                         duration: 0.15, 
+                         ease: "power2.inOut",
+                       });
+                     }}
+                     placeholder={isGuest ? "访客无生成权限..." : "给小马发送消息..."}
+                     rows={1}
+                     style={{ minHeight: '44px' }}
+                     className="flex-1 max-h-[160px] bg-transparent resize-none border-none outline-none px-4 py-2.5 text-[15px] leading-relaxed text-black/90 placeholder:text-black/30 placeholder:font-light"
+                     onKeyDown={(e) => {
+                       if (e.key === 'Enter' && !e.shiftKey) {
+                         e.preventDefault();
+                         formRef.current?.requestSubmit();
+                       }
+                     }}
+                   />
+                   <div className="shrink-0 p-1 flex items-center justify-center">
+                     <button
+                       type="submit"
+                       disabled={submitDisabled}
+                       className={`w-10 h-10 rounded-[14px] flex items-center justify-center transition-all duration-300 ${!input.trim() || submitDisabled ? 'bg-black/5 text-black/30 opacity-70' : 'bg-black text-white shadow-md hover:scale-105 active:scale-95'}`}
+                     >
+                        <Send className={`w-[18px] h-[18px] transition-transform ${input.trim() ? 'translate-x-0.5 -translate-y-0.5' : ''}`} />
+                     </button>
+                   </div>
+                 </div>
               </form>
               <div className="text-center mt-3 text-[10px] text-black/20 uppercase tracking-[0.15em]">
                  Void • Internal System
