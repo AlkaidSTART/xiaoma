@@ -405,7 +405,7 @@ export default function ChatPage() {
                    {error && (
                      <article className="flex w-full justify-center opacity-80 pt-4">
                         <div className="bg-red-50 text-red-600 text-xs px-4 py-2 border border-red-100 rounded-lg max-w-sm text-center">
-                           API Error: 权限校验未通过。只有管理员 (myj) 发送请求会被大模型接口受理。
+                           API Error: 权限校验未通过
                         </div>
                      </article>
                    )}
