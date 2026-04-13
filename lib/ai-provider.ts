@@ -1,7 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 
 const apiKey = process.env.THIRD_PARTY_API_KEY || process.env.OPENAI_API_KEY;
-const baseURL = process.env.THIRD_PARTY_BASE_URL || process.env.BASE_URL || 'https://api.edgefn.net/v1';
+const baseURL = process.env.THIRD_PARTY_BASE_URL || process.env.BASE_URL || '';
 
 if (!apiKey) {
   throw new Error('Missing THIRD_PARTY_API_KEY (or OPENAI_API_KEY).');
