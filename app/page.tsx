@@ -2,15 +2,18 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
+import type { UIMessage } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { Send, LogOut, MessageSquare, Plus, Sparkles, User, Trash2, Menu, X } from 'lucide-react';
+import { Send, LogOut, MessageSquare, Plus, Sparkles, User, Trash2, Menu, X, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { saveChat, getChat, getAllChats, deleteChat } from '@/lib/db';
+import { availableModels } from '@/lib/model-config';
+import { v4 as uuidv4 } from 'uuid';
 
 interface ChatMessage {
   id: string;
@@ -26,22 +29,25 @@ interface ChatRecord {
   updatedAt: number;
 }
 
-function getMessageText(message: ChatMessage | string | any) {
+type MessagePart = { type?: string; text?: string };
+
+function getMessageText(message: ChatMessage | UIMessage | string | null | undefined) {
   // Simple fallback for content in ai sdk
   if (typeof message === 'string') return message;
-  if (message.content) return message.content;
-  return (message.parts ?? [])
-    .filter((part: any) => part.type === 'text' && typeof part.text === 'string')
-    .map((part: any) => part.text ?? '')
+  if (!message) return '';
+  const unknownMessage = message as { content?: unknown; parts?: MessagePart[] };
+  if (typeof unknownMessage.content === 'string') return unknownMessage.content;
+  return (unknownMessage.parts ?? [])
+    .filter((part) => part.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text ?? '')
     .join('')
     .trim();
 }
 
 export default function ChatPage() {
   const router = useRouter();
-  const { isAuthenticated, username, role, logout } = useAuthStore();
+  const { isAuthenticated, username, role, logout, hasHydrated } = useAuthStore();
   const isGuest = role !== 'admin';
-  const [isHydrated, setIsHydrated] = useState(false);
   const [guestNotice, setGuestNotice] = useState('');
   
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,13 +58,19 @@ export default function ChatPage() {
   const guestNoticeRef = useRef<HTMLDivElement>(null);
   
   const [sidebarChats, setSidebarChats] = useState<ChatRecord[]>([]);
-  const [currentChatId, setCurrentChatId] = useState<string>('');
+  const [currentChatId, setCurrentChatId] = useState<string>(() => uuidv4());
   const [input, setInput] = useState('');
   const [cleanupTip, setCleanupTip] = useState('侧边栏中 10 天无内容的对话将自动清理。');
   const [showDeleteModal, setShowDeleteModal] = useState<{ show: boolean; id: string }>({ show: false, id: '' });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<string>(availableModels[0]?.name ?? 'deepseek-chat');
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const selectedModelLabel = availableModels.find((model) => model.name === selectedModel)?.displayName || selectedModel;
 
-  const transport = React.useMemo(() => new DefaultChatTransport({ api: '/api/chat' }), []);
+  const transport = React.useMemo(() => new DefaultChatTransport({ 
+    api: '/api/third-party',
+    body: { model: selectedModel }
+  }), [selectedModel]);
 
   const { messages, setMessages, sendMessage, status, error } = useChat({
     transport,
@@ -102,21 +114,15 @@ export default function ChatPage() {
   };
 
   useEffect(() => {
-    setIsHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    if (isHydrated && !isAuthenticated) {
+    if (hasHydrated && !isAuthenticated) {
       router.replace('/login');
     }
-  }, [isHydrated, isAuthenticated, router]);
+  }, [hasHydrated, isAuthenticated, router]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
     
     // Load initial ID
-    const newChatId = Date.now().toString();
-    setCurrentChatId(newChatId);
     loadSidebar();
   }, [isAuthenticated]);
 
@@ -158,7 +164,7 @@ export default function ChatPage() {
   }, [guestNotice]);
 
   const handleCreateNewChat = () => {
-    const newChatId = Date.now().toString();
+    const newChatId = uuidv4();
     const switchConversation = () => {
       setMessages([]);
       setCurrentChatId(newChatId);
@@ -231,7 +237,7 @@ export default function ChatPage() {
       await deleteChat(id);
       if (currentChatId === id) {
         setMessages([]);
-        const nextId = Date.now().toString();
+        const nextId = uuidv4();
         setCurrentChatId(nextId);
       }
       loadSidebar();
@@ -246,7 +252,7 @@ export default function ChatPage() {
       return;
     }
     if (isGuest) {
-      setGuestNotice('访客模式无生成内容的权限。如需使用，请使用 myj 重新登录。');
+      setGuestNotice('访客模式无生成权限。如需使用，请向管理员申请账号');
       return;
     }
     if (!input.trim()) return;
@@ -257,7 +263,13 @@ export default function ChatPage() {
     // Quick local save trigger after pushing user message
     setTimeout(async () => {
       const title = getMessageText(messages[0] || { text: input }).slice(0, 30) || 'New Conversation';
-      await saveChat(currentChatId, title, [...messages, { id: Date.now().toString(), role: 'user', content: input } as any]);
+      const userMessage = {
+        id: uuidv4(),
+        role: 'user',
+        content: input,
+        parts: [{ type: 'text', text: input }],
+      } as unknown as UIMessage;
+      await saveChat(currentChatId, title, [...messages, userMessage]);
       loadSidebar();
     }, 100);
     
@@ -272,7 +284,7 @@ export default function ChatPage() {
 
   const submitDisabled = status !== 'ready' || input.trim().length === 0 || !isAuthenticated || isGuest;
 
-  if (!isHydrated || !isAuthenticated) {
+  if (!hasHydrated || !isAuthenticated) {
     return <div className="flex h-screen w-full bg-[#FAFAFA] text-[#111111] overflow-hidden" />;
   }
 
@@ -289,7 +301,7 @@ export default function ChatPage() {
           
           <button 
             onClick={handleCreateNewChat}
-            className="flex w-full items-center gap-3 bg-white border border-black/5 rounded-[1rem] px-4 py-3 text-sm hover:shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:border-black/10 transition-all text-black/80 font-medium"
+            className="flex w-full items-center gap-3 bg-white border border-black/5 rounded-[1rem] px-4 py-3 text-sm hover:shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:border-black/10 transition-all text-black/80 font-medium mb-3"
           >
             <Plus className="w-4 h-4" />
             新建对话
@@ -405,7 +417,7 @@ export default function ChatPage() {
                    {error && (
                      <article className="flex w-full justify-center opacity-80 pt-4">
                         <div className="bg-red-50 text-red-600 text-xs px-4 py-2 border border-red-100 rounded-lg max-w-sm text-center">
-                           API Error: 权限校验未通过
+                        请求暂时失败，请稍后重试
                         </div>
                      </article>
                    )}
@@ -430,6 +442,44 @@ export default function ChatPage() {
                 onSubmit={handleSend}
                 className="relative bg-white/70 backdrop-blur-md border border-black/5 rounded-[2rem] p-2 flex items-end shadow-[0_4px_24px_rgba(0,0,0,0.03)] focus-within:bg-white focus-within:shadow-[0_8px_32px_rgba(0,0,0,0.06)] focus-within:border-black/10 transition-all duration-500"
               >
+                 <div className="absolute left-4 right-14 top-3 z-10 flex items-center justify-between gap-3 pointer-events-auto">
+                   <div className="relative">
+                     <button
+                       type="button"
+                       onClick={() => setShowModelDropdown(!showModelDropdown)}
+                       className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/85 px-3 py-1.5 text-[11px] font-medium text-black/75 shadow-sm backdrop-blur-md transition-all hover:border-black/20 hover:bg-white"
+                     >
+                       <Sparkles className="w-3.5 h-3.5" />
+                       <span className="max-w-[160px] truncate">{selectedModelLabel}</span>
+                       <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showModelDropdown ? 'rotate-180' : ''}`} />
+                     </button>
+
+                     {showModelDropdown && (
+                       <div className="absolute left-0 top-[calc(100%+0.5rem)] w-[min(320px,80vw)] overflow-hidden rounded-[1.25rem] border border-black/10 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.12)]">
+                         <div className="max-h-72 overflow-y-auto p-2">
+                           {availableModels.map((model) => (
+                             <button
+                               key={model.name}
+                               type="button"
+                               onClick={() => {
+                                 setSelectedModel(model.name);
+                                 setShowModelDropdown(false);
+                               }}
+                               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${selectedModel === model.name ? 'bg-black/5 text-black font-medium' : 'text-black/65 hover:bg-black/[0.03]'}`}
+                             >
+                               <span className={`w-2 h-2 rounded-full ${model.type === 'general' ? 'bg-blue-500' : model.type === 'code' ? 'bg-emerald-500' : model.type === 'vl' ? 'bg-violet-500' : model.type === 'embedding' ? 'bg-amber-500' : model.type === 'reranker' ? 'bg-orange-500' : 'bg-zinc-500'}`} />
+                               <span className="truncate">{model.displayName}</span>
+                               <span className="ml-auto text-[10px] text-black/30">{model.date}</span>
+                             </button>
+                           ))}
+                         </div>
+                       </div>
+                     )}
+                   </div>
+
+                   <span className="ml-auto text-[10px] uppercase tracking-[0.2em] text-black/30 hidden sm:inline">{isGuest ? 'Guest Mode' : 'Admin Mode'}</span>
+                 </div>
+
                  <textarea
                    value={input}
                    onChange={(e) => setInput(e.target.value)}
@@ -451,9 +501,12 @@ export default function ChatPage() {
                    }}
                    placeholder={isGuest ? "访客模式 (只读) ..." : "Ask Xiaoma Model..."}
                    rows={1}
-                   className="flex-1 max-h-[200px] min-h-[44px] bg-transparent resize-none border-none outline-none px-4 py-3 text-sm text-black placeholder:text-black/20"
+                   className="flex-1 max-h-[200px] min-h-[44px] bg-transparent resize-none border-none outline-none px-4 py-10 text-sm text-black placeholder:text-black/20"
                    onKeyDown={(e) => {
-                     if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e as any); }
+                     if (e.key === 'Enter' && !e.shiftKey) {
+                       e.preventDefault();
+                       formRef.current?.requestSubmit();
+                     }
                    }}
                  />
                  <button

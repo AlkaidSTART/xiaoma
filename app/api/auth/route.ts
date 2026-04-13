@@ -8,7 +8,6 @@ export async function POST(req: Request) {
   try {
     const { username, password } = await req.json();
     const cookieStore = await cookies();
-    
     if (user.some(u => u.username === username && u.password === password)) {
       cookieStore.set('auth_token', 'admin', { httpOnly: true, path: '/' });
       return NextResponse.json({ success: true, role: 'admin', username: username });

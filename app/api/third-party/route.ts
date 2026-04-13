@@ -1,29 +1,37 @@
-import { NextRequest } from "next/server";
-import { streamText,convertToModelMessages } from 'ai'
-import { createDeepSeek } from "@ai-sdk/deepseek";
-import { DEEPSEEK_API_KEY } from "@/env.local";
-const deepSeek = createDeepSeek({
-    apiKey: DEEPSEEK_API_KEY, //设置API密钥
-});
-export async function POST(req: NextRequest) {
-    const { messages } = await req.json(); //获取请求体
-    //这里为什么接受messages 因为我们使用前端的useChat 他会自动注入这个参数，所有可以直接读取
-    const result = streamText({
-        model: deepSeek('deepseek-chat'), //使用deepseek-chat模型
-        messages:convertToModelMessages(messages), //转换为模型消息
-        //前端传过来的额messages不符合sdk格式所以需要convertToModelMessages转换一下
-        //转换之后的格式：
-        //[
-            //{ role: 'user', content: [ [Object] ] },
-            //{ role: 'assistant', content: [ [Object] ] },
-            //{ role: 'user', content: [ [Object] ] },
-            //{ role: 'assistant', content: [ [Object] ] },
-            //{ role: 'user', content: [ [Object] ] },
-            //{ role: 'assistant', content: [ [Object] ] },
-            //{ role: 'user', content: [ [Object] ] }
-        //]
-        system: '你是一个高级程序员，请根据用户的问题给出回答', //系统提示词
-    });
-   
-    return result.toUIMessageStreamResponse() //返回流式响应
+import { convertToModelMessages, streamText, type UIMessage } from 'ai';
+import { getThirdPartyModel } from '@/lib/ai-provider';
+
+export const maxDuration = 30;
+
+export async function POST(req: Request) {
+    try {
+        const body = await req.json();
+        const messages = (body?.messages ?? []) as UIMessage[];
+        const modelName = body?.model;
+        const systemPrompt = process.env.THIRD_PARTY_SYSTEM_PROMPT || '你是一个高级程序员，请根据用户的问题给出回答。';
+
+        if (!Array.isArray(messages)) {
+            return new Response(JSON.stringify({ error: 'Invalid request body: messages must be an array.' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        const result = streamText({
+            model: getThirdPartyModel(modelName),
+            messages: await convertToModelMessages(messages),
+            system: systemPrompt,
+            temperature: typeof body?.temperature === 'number' ? body.temperature : undefined,
+            maxOutputTokens: typeof body?.max_tokens === 'number' ? body.max_tokens : undefined,
+            topP: typeof body?.top_p === 'number' ? body.top_p : undefined,
+        });
+
+        return result.toUIMessageStreamResponse();
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Third-party API request failed.';
+        return new Response(JSON.stringify({ error: message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
 }
