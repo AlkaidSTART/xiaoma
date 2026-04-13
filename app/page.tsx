@@ -5,13 +5,13 @@ import gsap from 'gsap';
 import type { UIMessage } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { Send, LogOut, MessageSquare, Plus, Sparkles, User, Trash2, Menu, X, ChevronDown } from 'lucide-react';
+import { Send, LogOut, MessageSquare, Plus, User, Trash2, Menu, X, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { saveChat, getChat, getAllChats, deleteChat } from '@/lib/db';
+import { saveChat, getChat, getAllChats, deleteChat, addChatEvent } from '@/lib/db';
 import { availableModels } from '@/lib/model-config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -44,6 +44,41 @@ function getMessageText(message: ChatMessage | UIMessage | string | null | undef
     .trim();
 }
 
+function splitThinkingAndAnswer(content: string) {
+  const normalized = content.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return { thinking: '', answer: '' };
+
+  const thinkOpenMatch = normalized.match(/<think>/i);
+  if (thinkOpenMatch) {
+    const openIndex = thinkOpenMatch.index ?? 0;
+    const afterOpen = normalized.slice(openIndex + thinkOpenMatch[0].length);
+    const closeMatch = afterOpen.match(/<\/think>/i);
+    if (!closeMatch) {
+      return {
+        thinking: afterOpen.trim(),
+        answer: '',
+      };
+    }
+  }
+
+  const thinkTagMatch = normalized.match(/<think>([\s\S]*?)<\/think>/i);
+  if (thinkTagMatch) {
+    const thinking = (thinkTagMatch[1] ?? '').trim();
+    const answer = normalized.replace(thinkTagMatch[0], '').trim();
+    return { thinking, answer };
+  }
+
+  const labeledMatch = normalized.match(/^(?:思考|推理|分析)[:：]\s*([\s\S]*?)\n(?:\n)?(?:最终回答|回答|结论|正文)[:：]\s*([\s\S]*)$/i);
+  if (labeledMatch) {
+    return {
+      thinking: (labeledMatch[1] ?? '').trim(),
+      answer: (labeledMatch[2] ?? '').trim(),
+    };
+  }
+
+  return { thinking: '', answer: normalized };
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const { isAuthenticated, username, role, logout, hasHydrated } = useAuthStore();
@@ -65,7 +100,17 @@ export default function ChatPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>(availableModels[0]?.name ?? 'deepseek-chat');
   const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const selectedModelLabel = availableModels.find((model) => model.name === selectedModel)?.displayName || selectedModel;
+  const selectedModelConfig = availableModels.find((model) => model.name === selectedModel);
+  const modeLabelMap: Record<string, string> = {
+    fast: '快速',
+    balanced: '均衡',
+    reasoning: '深度',
+    coder: '代码',
+  };
+  const selectedModelLabel = selectedModelConfig
+    ? `XiaoMa-${selectedModelConfig.provider}`
+    : selectedModel;
+  const selectedModelModeLabel = selectedModelConfig ? modeLabelMap[selectedModelConfig.mode] : '均衡';
 
   const transport = React.useMemo(() => new DefaultChatTransport({ 
     api: '/api/third-party',
@@ -78,9 +123,31 @@ export default function ChatPage() {
     onFinish: ({ messages: newMessages }) => {
       const title = getMessageText(newMessages[0]).slice(0, 30) || 'New Conversation';
       saveChat(currentChatId, title, newMessages).catch(console.error);
+      addChatEvent(currentChatId, 'response', { model: selectedModel, note: 'assistant response completed' }).catch(console.error);
       loadSidebar();
     }
   });
+
+  const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === 'assistant');
+  const latestAssistantText = getMessageText(latestAssistantMessage);
+  const latestAssistantId = latestAssistantMessage?.id;
+  const shouldRenderStreamingPlaceholder = status === 'streaming' && latestAssistantText.trim().length === 0;
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentChatId) return;
+    let cancelled = false;
+
+    const restoreCurrentChat = async () => {
+      const chat = await getChat(currentChatId);
+      if (cancelled) return;
+      setMessages((chat?.messages as UIMessage[]) ?? []);
+    };
+
+    restoreCurrentChat().catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentChatId, isAuthenticated, setMessages]);
 
   // Load sidebar chats
   const loadSidebar = async () => {
@@ -170,6 +237,7 @@ export default function ChatPage() {
       setCurrentChatId(newChatId);
       setGuestNotice('已创建新对话');
       saveChat(newChatId, 'New Conversation', []).then(loadSidebar).catch(console.error);
+      addChatEvent(newChatId, 'create', { note: 'create new conversation' }).catch(console.error);
     };
 
     if (!chatSurfaceRef.current) {
@@ -201,6 +269,7 @@ export default function ChatPage() {
   const handleSelectChat = async (id: string) => {
     const chat = await getChat(id);
     if (chat && id !== currentChatId) {
+      const switchTip = `已切换到：${chat.title?.trim() ? chat.title.slice(0, 16) : '未命名对话'}`;
       if (chatSurfaceRef.current) {
         gsap.to(chatSurfaceRef.current, {
           opacity: 0,
@@ -208,8 +277,9 @@ export default function ChatPage() {
           duration: 0.15,
           onComplete: () => {
             setCurrentChatId(id);
-            setMessages(chat.messages);
             setMobileSidebarOpen(false);
+            setGuestNotice(switchTip);
+            addChatEvent(id, 'switch', { note: switchTip }).catch(console.error);
             gsap.fromTo(chatSurfaceRef.current, 
               { opacity: 0, y: -4 }, 
               { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }
@@ -218,8 +288,9 @@ export default function ChatPage() {
         });
       } else {
         setCurrentChatId(id);
-        setMessages(chat.messages);
         setMobileSidebarOpen(false);
+        setGuestNotice(switchTip);
+        addChatEvent(id, 'switch', { note: switchTip }).catch(console.error);
       }
     } else {
       setMobileSidebarOpen(false);
@@ -258,6 +329,7 @@ export default function ChatPage() {
     if (!input.trim()) return;
 
     setGuestNotice('');
+    addChatEvent(currentChatId, 'message', { model: selectedModel, note: input.slice(0, 120) }).catch(console.error);
     sendMessage({ text: input });
     
     // Quick local save trigger after pushing user message
@@ -387,34 +459,77 @@ export default function ChatPage() {
                    {messages.map((m) => {
                      const isUser = m.role === 'user';
                      const text = getMessageText(m);
+                     const { thinking, answer } = !isUser ? splitThinkingAndAnswer(text) : { thinking: '', answer: text };
+                     const isLatestAssistant = !isUser && m.id === latestAssistantId;
+                     const showAnswerCue =
+                       isLatestAssistant &&
+                       status === 'streaming' &&
+                       thinking.trim().length > 0 &&
+                       answer.trim().length > 0;
+                     const hideAnswerWhileThinking =
+                       isLatestAssistant &&
+                       status === 'streaming' &&
+                       thinking.trim().length > 0 &&
+                       answer.trim().length === 0;
                      return (
                        <article key={m.id} className={`chat-entry-anim flex w-full gap-4 ${isUser ? 'justify-end md:pl-10' : 'justify-start md:pr-10'}`}>
                           {!isUser && (
-                            <div className="w-7 h-7 rounded-[10px] bg-gradient-to-b from-gray-800 to-black shrink-0 flex items-center justify-center mt-2 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
-                               <div className="w-2 h-2 bg-white/90 rounded-[3px] rotate-45" />
+                            <div className="w-8 h-8 rounded-[14px] bg-gradient-to-b from-neutral-900 via-neutral-800 to-black shrink-0 flex items-center justify-center mt-2 shadow-[0_6px_18px_rgba(0,0,0,0.16)] relative overflow-hidden">
+                               <div className="absolute inset-[1px] rounded-[13px] border border-white/10" />
+                               <div className="w-[14px] h-[14px] rounded-full border border-white/65 flex items-center justify-center">
+                                 <div className="w-[4px] h-[4px] rounded-full bg-white/90" />
+                               </div>
                             </div>
                           )}
                           <div className={`max-w-[85%] md:max-w-[75%] ${isUser ? 'bg-black text-white px-5 py-3.5 rounded-[1.5rem] rounded-tr-[8px] shadow-[0_4px_16px_rgba(0,0,0,0.06)]' : 'pt-2.5'}`}>
-                             <div className={`prose max-w-none text-[15px] leading-relaxed ${isUser ? 'text-white/95 prose-invert' : 'text-black/85 prose-headings:font-serif prose-headings:font-normal'}`}>
-                                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                                  {text || ''}
-                                </ReactMarkdown>
-                             </div>
+                             {isUser ? (
+                               <div className="prose max-w-none text-[15px] leading-relaxed text-white/95 prose-invert">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                    {text || ''}
+                                  </ReactMarkdown>
+                               </div>
+                             ) : (
+                               <div className="space-y-3">
+                                 {thinking && (
+                                   <section className="rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3">
+                                     <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-black/45">思考</div>
+                                     <div className="prose max-w-none text-[14px] leading-relaxed text-black/60">
+                                       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                         {thinking}
+                                       </ReactMarkdown>
+                                     </div>
+                                   </section>
+                                 )}
+                                 {showAnswerCue && (
+                                   <div className="inline-flex items-center rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-medium tracking-[0.08em] text-black/55 animate-in fade-in duration-300">
+                                     思考完成，开始输出正文
+                                   </div>
+                                 )}
+                                 {!hideAnswerWhileThinking && (
+                                   <section className="rounded-2xl border border-black/5 bg-white px-4 py-3">
+                                       {thinking && <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-black/45">正文</div>}
+                                     <div className="prose max-w-none text-[15px] leading-relaxed text-black/85 prose-headings:font-serif prose-headings:font-normal">
+                                       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+                                         {answer || text || ''}
+                                       </ReactMarkdown>
+                                     </div>
+                                   </section>
+                                 )}
+                               </div>
+                             )}
                           </div>
-                          {isUser && (
-                            <div className="hidden sm:flex w-7 h-7 rounded-[10px] bg-gradient-to-b from-gray-100 to-gray-200 border border-black/5 shrink-0 items-center justify-center mt-2 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
-                               <div className="w-2 h-2 bg-black/40 rounded-full" />
-                            </div>
-                          )}
                        </article>
                      );
                    })}
-                   {status === 'streaming' && (
+                   {shouldRenderStreamingPlaceholder && (
                      <article className="flex w-full gap-4 justify-start md:pr-10 chat-entry-anim">
-                        <div className="w-7 h-7 rounded-[10px] bg-gradient-to-b from-gray-800 to-black shrink-0 flex items-center justify-center mt-2 shadow-[0_2px_8px_rgba(0,0,0,0.08)]">
-                           <div className="w-2 h-2 bg-white/90 rounded-[3px] rotate-45" />
+                        <div className="w-8 h-8 rounded-[14px] bg-gradient-to-b from-neutral-900 via-neutral-800 to-black shrink-0 flex items-center justify-center mt-2 shadow-[0_6px_18px_rgba(0,0,0,0.16)] relative overflow-hidden">
+                           <div className="absolute inset-[1px] rounded-[13px] border border-white/10" />
+                           <div className="w-[14px] h-[14px] rounded-full border border-white/65 flex items-center justify-center">
+                             <div className="w-[4px] h-[4px] rounded-full bg-white/90" />
+                           </div>
                         </div>
-                        <div className="pt-2.5">
+                        <div className="pt-2.5 w-full max-w-[85%] md:max-w-[75%]">
                            <div className="w-1.5 h-4 bg-black/20 animate-pulse rounded-full mt-1.5 min-h-[1.2rem]"></div>
                         </div>
                      </article>
@@ -456,6 +571,7 @@ export default function ChatPage() {
                        className="group inline-flex items-center gap-2 rounded-xl px-2 py-1.5 text-[13px] font-medium text-black/70 transition-all hover:text-black hover:bg-black/5 active:scale-95"
                      >
                        <span className="truncate tracking-wide">{selectedModelLabel}</span>
+                       <span className="rounded-full border border-black/10 px-1.5 py-0.5 text-[10px] tracking-[0.08em] text-black/55">{selectedModelModeLabel}</span>
                        <ChevronDown className={`w-4 h-4 opacity-50 transition-transform duration-200 ${showModelDropdown ? 'rotate-180 opacity-100' : ''}`} />
                      </button>
 
@@ -472,8 +588,13 @@ export default function ChatPage() {
                                }}
                                className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition-colors ${selectedModel === model.name ? 'bg-black text-white' : 'text-black/70 hover:bg-black/5'}`}
                              >
-                               <span className={`w-[6px] h-[6px] rounded-full shrink-0 ${model.type === 'general' ? 'bg-blue-400' : model.type === 'code' ? 'bg-emerald-400' : model.type === 'vl' ? 'bg-violet-400' : model.type === 'embedding' ? 'bg-amber-400' : model.type === 'reranker' ? 'bg-orange-400' : 'bg-zinc-400'}`} />
-                               <span className="truncate text-sm font-medium">{model.displayName}</span>
+                               <span className="w-[6px] h-[6px] rounded-full shrink-0 bg-black/55" />
+                               <div className="min-w-0 flex-1">
+                                 <div className="truncate text-sm font-medium">{`XiaoMa-${model.provider}`}</div>
+                                 <div className={`text-[10px] ${selectedModel === model.name ? 'text-white/70' : 'text-black/45'}`}>
+                                   {`${model.displayName} · ${modeLabelMap[model.mode]}`}
+                                 </div>
+                               </div>
                              </button>
                            ))}
                          </div>
@@ -503,7 +624,7 @@ export default function ChatPage() {
                          ease: "power2.inOut",
                        });
                      }}
-                     placeholder={isGuest ? "访客无生成权限..." : "给小马发送消息..."}
+                     placeholder={isGuest ? "访客无生成权限..." : "send something to start a conversation..."}
                      rows={1}
                      style={{ minHeight: '44px' }}
                      className="flex-1 max-h-[160px] bg-transparent resize-none border-none outline-none px-4 py-2.5 text-[15px] leading-relaxed text-black/90 placeholder:text-black/30 placeholder:font-light"
