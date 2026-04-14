@@ -8,7 +8,9 @@ export async function POST(req: Request) {
         const body = await req.json();
         const messages = (body?.messages ?? []) as UIMessage[];
         const modelName = body?.model;
-        const systemPrompt = process.env.THIRD_PARTY_SYSTEM_PROMPT || '你是一个高级程序员，请根据用户的问题给出回答。';
+        const defaultPrompt = "你是一个高级程序员，请根据用户的问题给出回答。";
+        const systemPrompt = process.env.THIRD_PARTY_SYSTEM_PROMPT || defaultPrompt;
+
         const mcpConfigs = Array.isArray(body?.mcpConfigs)
             ? (body.mcpConfigs as Array<{
                 key: string;
