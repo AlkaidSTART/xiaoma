@@ -49,6 +49,8 @@ export default function McpConfigPage() {
     [config]
   );
 
+  const isPlaywright = server?.key === 'playwright';
+
   if (!server) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F7F7F3] px-6 text-black">
@@ -92,6 +94,18 @@ export default function McpConfigPage() {
           </div>
 
           <p className="mt-3 text-sm text-black/50">{server.description}</p>
+
+          {isPlaywright && (
+            <div className="mt-3 rounded-xl border border-black/10 bg-black/[0.02] p-3 text-xs text-black/60">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-black/35">Playwright 推荐配置</div>
+              <div className="space-y-1.5 leading-relaxed">
+                <div>启动命令: pnpm exec playwright-mcp</div>
+                <div>浏览器: chromium, headless=false, persistent profile</div>
+                <div>建议保留: .playwright-profile, allowed origins = *</div>
+                <div>用途: 页面验证、浏览器自动化、登录态复用</div>
+              </div>
+            </div>
+          )}
 
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             {MCP_SERVER_DEFINITIONS.map((item) => (

@@ -1,0 +1,21 @@
+{
+  "servers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": [
+        "exec",
+        "playwright-mcp"
+      ],
+      "env": {
+        "PLAYWRIGHT_MCP_BROWSER": "chromium",
+        "PLAYWRIGHT_MCP_HEADLESS": "false",
+        "PLAYWRIGHT_MCP_ISOLATED": "false",
+        "PLAYWRIGHT_MCP_VISION": "true",
+        "PLAYWRIGHT_MCP_USER_DATA_DIR": ".playwright-profile",
+        "PLAYWRIGHT_MCP_ALLOWED_ORIGINS": "*",
+        "PLAYWRIGHT_MCP_VIEWPORT_SIZE": "1280x720"
+      }
+    }
+  }
+}
